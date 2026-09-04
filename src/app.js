@@ -9,6 +9,7 @@ const leadsRoutes = require('./routes/leads.routes');
 const contentRoutes = require('./routes/content.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const aiAssistantRoutes = require('./routes/aiAssistant.routes');
+const seedRoutes = require('./routes/seed.routes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -53,6 +54,7 @@ app.use('/api/leads', leadsRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/ai-assistant', aiAssistantRoutes);
+app.use('/api/seed-init', seedRoutes);
 
 // ===== Gestion des erreurs =====
 app.use(notFound);
