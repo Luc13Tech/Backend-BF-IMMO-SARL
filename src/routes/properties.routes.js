@@ -7,15 +7,16 @@ const router = express.Router();
 
 // ===== PUBLIC =====
 
-// GET /api/properties?listingType=vente&type=villa&status=disponible&q=dakar
+// GET /api/properties?listingType=vente&type=villa&status=disponible&q=dakar&featured=true&limit=1
 router.get('/', async (req, res, next) => {
   try {
-    const { listingType, type, status, q, minPrice, maxPrice } = req.query;
+    const { listingType, type, status, q, minPrice, maxPrice, featured, limit } = req.query;
     const filter = { active: true };
 
     if (listingType) filter.listingType = listingType;
     if (type) filter.type = type;
     if (status) filter.status = status;
+    if (featured === 'true') filter.featured = true;
     if (minPrice || maxPrice) {
       filter.price = {};
       if (minPrice) filter.price.$gte = Number(minPrice);
@@ -23,7 +24,10 @@ router.get('/', async (req, res, next) => {
     }
     if (q) filter.$text = { $search: q };
 
-    const properties = await Property.find(filter).sort({ featured: -1, createdAt: -1 });
+    let query = Property.find(filter).sort({ featured: -1, createdAt: -1 });
+    if (limit) query = query.limit(Number(limit));
+    const properties = await query;
+
     res.json({ success: true, data: properties });
   } catch (err) {
     next(err);
