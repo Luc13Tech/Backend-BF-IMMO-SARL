@@ -10,6 +10,7 @@ const contentRoutes = require('./routes/content.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const aiAssistantRoutes = require('./routes/aiAssistant.routes');
 const seedRoutes = require('./routes/seed.routes');
+const adminAuditRoutes = require('./routes/adminAudit.routes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -23,7 +24,6 @@ const allowedOrigins = (process.env.CORS_ORIGIN || '')
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Autorise les outils sans origine (Postman, curl) et les origines listées
       if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
@@ -55,6 +55,7 @@ app.use('/api/content', contentRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/ai-assistant', aiAssistantRoutes);
 app.use('/api/seed-init', seedRoutes);
+app.use('/api/admin-audit', adminAuditRoutes);
 
 // ===== Gestion des erreurs =====
 app.use(notFound);
