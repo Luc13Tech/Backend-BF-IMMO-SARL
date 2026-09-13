@@ -2,6 +2,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const AdminUser = require('../models/AdminUser');
 const { requireAuth } = require('../middleware/auth');
+const { logAction } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -35,11 +36,29 @@ router.post('/login', async (req, res, next) => {
 
     const token = signToken(admin);
 
+    // req.admin n'existe pas encore à ce stade (pas passé par requireAuth) :
+    // on l'attache manuellement pour que logAction() puisse s'en servir.
+    req.admin = admin;
+    await logAction(req, { action: 'LOGIN', details: 'Connexion réussie' });
+
     res.json({
       success: true,
       token,
       admin: { id: admin._id, name: admin.name, email: admin.email, role: admin.role },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/logout
+// Le token JWT n'est pas révoqué côté serveur (stateless) — cette route
+// sert uniquement à tracer l'événement dans le journal d'audit. Le
+// frontend doit dans tous les cas supprimer le token de son côté.
+router.post('/logout', requireAuth, async (req, res, next) => {
+  try {
+    await logAction(req, { action: 'LOGOUT', details: 'Déconnexion' });
+    res.json({ success: true, message: 'Déconnexion enregistrée.' });
   } catch (err) {
     next(err);
   }

@@ -6,62 +6,42 @@ const { requireUserAuth } = require('../middleware/userAuth');
 const router = express.Router();
 
 function signUserToken(user) {
-  return jwt.sign(
-    { id: user._id, type: 'user' },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
-  );
+  return jwt.sign({ id: user._id, type: 'user' }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '30d',
+  });
 }
 
 function publicUser(user) {
-  return {
-    id: user._id,
-    fullName: user.fullName,
-    email: user.email,
-    phone: user.phone,
-  };
+  return { id: user._id, fullName: user.fullName, email: user.email, phone: user.phone };
 }
 
-// POST /api/users/register
 router.post('/register', async (req, res, next) => {
   try {
     const { fullName, email, phone, password } = req.body;
 
     if (!fullName || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Nom complet, email et mot de passe sont requis.',
-      });
+      return res.status(400).json({ success: false, message: 'Nom complet, email et mot de passe sont requis.' });
     }
     if (password.length < 8) {
-      return res.status(400).json({
-        success: false,
-        message: 'Le mot de passe doit contenir au moins 8 caractères.',
-      });
+      return res.status(400).json({ success: false, message: 'Le mot de passe doit contenir au moins 8 caractères.' });
     }
 
     const existing = await User.findOne({ email: email.toLowerCase() });
     if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: 'Un compte existe déjà avec cet email.',
-      });
+      return res.status(409).json({ success: false, message: 'Un compte existe déjà avec cet email.' });
     }
 
     const user = await User.create({ fullName, email, phone, password });
     const token = signUserToken(user);
-
     res.status(201).json({ success: true, token, user: publicUser(user) });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/users/login
 router.post('/login', async (req, res, next) => {
   try {
     const { email, password } = req.body;
-
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'Email et mot de passe requis.' });
     }
@@ -83,12 +63,10 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
-// GET /api/users/me
 router.get('/me', requireUserAuth, (req, res) => {
   res.json({ success: true, user: publicUser(req.user) });
 });
 
-// GET /api/users/favorites → liste des biens favoris (peuplés)
 router.get('/favorites', requireUserAuth, async (req, res, next) => {
   try {
     const user = await req.user.populate('favorites');
@@ -98,7 +76,6 @@ router.get('/favorites', requireUserAuth, async (req, res, next) => {
   }
 });
 
-// PUT /api/users/favorites/:propertyId → ajoute/retire un bien des favoris (bascule)
 router.put('/favorites/:propertyId', requireUserAuth, async (req, res, next) => {
   try {
     const { propertyId } = req.params;

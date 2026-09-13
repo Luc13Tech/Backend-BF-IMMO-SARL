@@ -1,7 +1,8 @@
 const express = require('express');
 const Lead = require('../models/Lead');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const { validateLead } = require('../middleware/validate');
+const { logAction } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -18,7 +19,6 @@ const VALID_SERVICES = [
 
 // ===== PUBLIC =====
 
-// POST /api/leads/:service → soumission d'un formulaire (achat, location, gerance, vente, conseils, btp, suivi-chantier, contact)
 router.post('/:service', validateLead, async (req, res, next) => {
   try {
     const { service } = req.params;
@@ -35,7 +35,7 @@ router.post('/:service', validateLead, async (req, res, next) => {
       email,
       phone,
       message,
-      data: rest, // tous les champs spécifiques au formulaire (budget, zone, type de bien, etc.)
+      data: rest,
     });
 
     res.status(201).json({
@@ -50,7 +50,6 @@ router.post('/:service', validateLead, async (req, res, next) => {
 
 // ===== ADMIN (protégé) =====
 
-// GET /api/leads/admin/all?service=location&status=nouveau
 router.get('/admin/all', requireAuth, async (req, res, next) => {
   try {
     const { service, status } = req.query;
@@ -65,31 +64,74 @@ router.get('/admin/all', requireAuth, async (req, res, next) => {
   }
 });
 
-// PUT /api/leads/admin/:id/status → changer le statut d'une demande
-router.put('/admin/:id/status', requireAuth, async (req, res, next) => {
+// GET /api/leads/admin/:id → consultation d'une demande précise (tracée)
+router.get('/admin/:id', requireAuth, async (req, res, next) => {
   try {
-    const { status } = req.body;
-    const lead = await Lead.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true, runValidators: true }
-    );
+    const lead = await Lead.findById(req.params.id);
     if (!lead) {
       return res.status(404).json({ success: false, message: 'Demande introuvable.' });
     }
+
+    await logAction(req, {
+      action: 'VIEW_LEAD',
+      targetType: 'Lead',
+      targetId: lead._id,
+      details: `Consultation de la demande de ${lead.fullName}`,
+    });
+
     res.json({ success: true, data: lead });
   } catch (err) {
     next(err);
   }
 });
 
-// DELETE /api/leads/admin/:id
-router.delete('/admin/:id', requireAuth, async (req, res, next) => {
+// PUT /api/leads/admin/:id/status → tout admin peut changer le statut
+// (y compris archiver — un simple changement de statut, réversible)
+router.put('/admin/:id/status', requireAuth, async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    const before = await Lead.findById(req.params.id);
+
+    if (!before) {
+      return res.status(404).json({ success: false, message: 'Demande introuvable.' });
+    }
+
+    const lead = await Lead.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true, runValidators: true }
+    );
+
+    await logAction(req, {
+      action: 'UPDATE_LEAD_STATUS',
+      targetType: 'Lead',
+      targetId: lead._id,
+      details: `Statut : ${before.status} → ${lead.status}`,
+    });
+
+    res.json({ success: true, data: lead });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/leads/admin/:id → suppression DÉFINITIVE, réservée au superadmin.
+// Un compte "admin" (secrétaire) peut archiver via le statut ci-dessus,
+// mais ne peut pas effacer une demande de la base.
+router.delete('/admin/:id', requireAuth, requireRole('superadmin'), async (req, res, next) => {
   try {
     const lead = await Lead.findByIdAndDelete(req.params.id);
     if (!lead) {
       return res.status(404).json({ success: false, message: 'Demande introuvable.' });
     }
+
+    await logAction(req, {
+      action: 'DELETE_LEAD',
+      targetType: 'Lead',
+      targetId: req.params.id,
+      details: `Suppression définitive — demande de ${lead.fullName} (${lead.service})`,
+    });
+
     res.json({ success: true, message: 'Demande supprimée.' });
   } catch (err) {
     next(err);

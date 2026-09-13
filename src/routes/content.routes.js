@@ -1,12 +1,12 @@
 const express = require('express');
 const SiteContent = require('../models/SiteContent');
 const { requireAuth } = require('../middleware/auth');
+const { logAction } = require('../utils/audit');
 
 const router = express.Router();
 
 // ===== PUBLIC =====
 
-// GET /api/content → tous les textes publics du site, sous forme { key: value }
 router.get('/', async (req, res, next) => {
   try {
     const items = await SiteContent.find();
@@ -22,7 +22,6 @@ router.get('/', async (req, res, next) => {
 
 // ===== ADMIN (protégé) =====
 
-// GET /api/content/admin/all → liste complète avec métadonnées (pour l'interface d'édition)
 router.get('/admin/all', requireAuth, async (req, res, next) => {
   try {
     const items = await SiteContent.find().sort({ section: 1, key: 1 });
@@ -32,7 +31,6 @@ router.get('/admin/all', requireAuth, async (req, res, next) => {
   }
 });
 
-// PUT /api/content/admin/:key → crée ou met à jour une entrée de contenu
 router.put('/admin/:key', requireAuth, async (req, res, next) => {
   try {
     const { value, section, label } = req.body;
@@ -43,16 +41,22 @@ router.put('/admin/:key', requireAuth, async (req, res, next) => {
       { new: true, upsert: true, runValidators: true }
     );
 
+    await logAction(req, {
+      action: 'UPDATE_CONTENT',
+      targetType: 'SiteContent',
+      targetId: item._id,
+      details: `Modification : ${req.params.key}`,
+    });
+
     res.json({ success: true, data: item });
   } catch (err) {
     next(err);
   }
 });
 
-// PUT /api/content/admin/bulk/update → met à jour plusieurs clés en une fois
 router.put('/admin/bulk/update', requireAuth, async (req, res, next) => {
   try {
-    const { items } = req.body; // [{ key, value, section, label }, ...]
+    const { items } = req.body;
     if (!Array.isArray(items)) {
       return res.status(400).json({ success: false, message: '"items" doit être un tableau.' });
     }
@@ -66,6 +70,12 @@ router.put('/admin/bulk/update', requireAuth, async (req, res, next) => {
         )
       )
     );
+
+    await logAction(req, {
+      action: 'UPDATE_CONTENT',
+      targetType: 'SiteContent',
+      details: `Modification groupée de ${items.length} entrée(s) : ${items.map((i) => i.key).join(', ')}`,
+    });
 
     const all = await SiteContent.find();
     res.json({ success: true, data: all });

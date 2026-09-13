@@ -2,6 +2,7 @@ const express = require('express');
 const Property = require('../models/Property');
 const { requireAuth } = require('../middleware/auth');
 const { deleteFromCloudinary } = require('../config/cloudinary');
+const { logAction } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -34,7 +35,6 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// GET /api/properties/:id
 router.get('/:id', async (req, res, next) => {
   try {
     const property = await Property.findOne({ _id: req.params.id, active: true });
@@ -49,7 +49,6 @@ router.get('/:id', async (req, res, next) => {
 
 // ===== ADMIN (protégé) =====
 
-// GET /api/properties/admin/all → tous les biens, y compris inactifs
 router.get('/admin/all', requireAuth, async (req, res, next) => {
   try {
     const properties = await Property.find().sort({ createdAt: -1 });
@@ -59,17 +58,23 @@ router.get('/admin/all', requireAuth, async (req, res, next) => {
   }
 });
 
-// POST /api/properties → création (les images sont uploadées séparément via /api/upload)
 router.post('/', requireAuth, async (req, res, next) => {
   try {
     const property = await Property.create(req.body);
+
+    await logAction(req, {
+      action: 'CREATE_PROPERTY',
+      targetType: 'Property',
+      targetId: property._id,
+      details: `Création : ${property.title}`,
+    });
+
     res.status(201).json({ success: true, data: property });
   } catch (err) {
     next(err);
   }
 });
 
-// PUT /api/properties/:id → édition complète
 router.put('/:id', requireAuth, async (req, res, next) => {
   try {
     const property = await Property.findByIdAndUpdate(req.params.id, req.body, {
@@ -79,13 +84,20 @@ router.put('/:id', requireAuth, async (req, res, next) => {
     if (!property) {
       return res.status(404).json({ success: false, message: 'Bien introuvable.' });
     }
+
+    await logAction(req, {
+      action: 'UPDATE_PROPERTY',
+      targetType: 'Property',
+      targetId: property._id,
+      details: `Modification : ${property.title}`,
+    });
+
     res.json({ success: true, data: property });
   } catch (err) {
     next(err);
   }
 });
 
-// DELETE /api/properties/:id → supprime le bien ET ses images Cloudinary
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
     const property = await Property.findByIdAndDelete(req.params.id);
@@ -96,6 +108,13 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
     await Promise.all(
       (property.images || []).map((img) => deleteFromCloudinary(img.publicId))
     );
+
+    await logAction(req, {
+      action: 'DELETE_PROPERTY',
+      targetType: 'Property',
+      targetId: req.params.id,
+      details: `Suppression : ${property.title}`,
+    });
 
     res.json({ success: true, message: 'Bien supprimé.' });
   } catch (err) {
