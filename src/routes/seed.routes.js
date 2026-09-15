@@ -3,29 +3,52 @@ const { runSeed } = require('../utils/seedData');
 
 const router = express.Router();
 
-/**
- * GET /api/seed-init?key=...
+/*
+ * Route de seed initiale.
  *
- * Déclenche le seed (7 métiers, textes du site, compte admin) directement
- * depuis le navigateur — utile quand l'accès Shell n'est pas disponible
- * (ex: plan gratuit Render). Protégé par une clé secrète en variable
- * d'environnement pour éviter qu'un tiers ne déclenche/réinitialise les
- * données publiquement. Idempotent : peut être rappelé sans risque.
+ * Pour compatibilité avec ton fonctionnement actuel, la clé peut encore
+ * être fournie en query string.
+ *
+ * Préférence sécurité :
+ * Authorization: Bearer <SEED_SECRET_KEY>
+ *
+ * La route doit idéalement être désactivée une fois le premier seed terminé.
  */
+
 router.get('/', async (req, res, next) => {
   try {
-    const key = req.query.key;
     const expected = process.env.SEED_SECRET_KEY;
 
     if (!expected) {
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
-        message: 'SEED_SECRET_KEY non configurée côté serveur.',
+        message: 'Service de seed désactivé.',
       });
     }
 
-    if (!key || key !== expected) {
-      return res.status(401).json({ success: false, message: 'Clé invalide.' });
+    const authorization = req.headers.authorization || '';
+
+    let providedKey = '';
+
+    if (authorization.startsWith('Bearer ')) {
+      providedKey = authorization.slice(7).trim();
+    }
+
+    /*
+     * Compatibilité avec l'ancienne méthode.
+     */
+    if (!providedKey) {
+      providedKey =
+        typeof req.query.key === 'string'
+          ? req.query.key
+          : '';
+    }
+
+    if (!providedKey || providedKey !== expected) {
+      return res.status(401).json({
+        success: false,
+        message: 'Clé invalide.',
+      });
     }
 
     const result = await runSeed();
