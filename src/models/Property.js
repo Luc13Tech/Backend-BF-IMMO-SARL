@@ -13,12 +13,12 @@ const propertySchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true },
     type: {
       type: String,
-      enum: ['villa', 'appartement', 'terrain', 'bureau', 'commerce', 'autre'],
+      enum: ['villa', 'appartement', 'terrain', 'bureau', 'commerce', 'Réalisation’, 'autre'],
       required: true,
     },
     listingType: {
       type: String,
-      enum: ['vente', 'location'],
+      enum: ['vente', 'location', ’Location journalière ’, ’Nuitée’, ’autre’],
       required: true,
     },
     price: { type: Number, required: true },
