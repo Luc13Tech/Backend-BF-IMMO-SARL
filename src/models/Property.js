@@ -21,7 +21,7 @@ const propertySchema = new mongoose.Schema(
       enum: ['vente', 'location', 'Location journalière', 'Nuitée', 'autre'],
       required: true,
     },
-    price: { type: Number, required: true },
+    price: { type: Number, default: null },
     priceUnit: { type: String, default: 'FCFA' },
     location: { type: String, required: true }, // ex: "Sicap Keur Massar, Dakar"
     bedrooms: { type: Number, default: 0 },
