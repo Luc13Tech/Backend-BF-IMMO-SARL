@@ -31,14 +31,21 @@ const propertySchema = new mongoose.Schema(
     },
     price: { type: Number, default: null },
     priceUnit: { type: String, default: 'FCFA' },
-    location: { type: String, required: true }, // ex: "Sicap Keur Massar, Dakar"
+    location: { type: String, required: true },
     bedrooms: { type: Number, default: 0 },
     bathrooms: { type: Number, default: 0 },
-    surface: { type: Number, default: 0 }, // en m²
+    surface: { type: Number, default: 0 },
     description: { type: String, default: '' },
     status: {
       type: String,
-      enum: ['disponible', 'nouveau', 'sous_offre', 'loue', 'vendu'],
+      enum: [
+        'disponible',
+        'nouveau',
+        'sous_offre',
+        'loue',
+        'vendu',
+        'Réalisation en cours',
+      ],
       default: 'disponible',
     },
     images: [imageSchema],
