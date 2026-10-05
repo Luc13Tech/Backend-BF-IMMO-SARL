@@ -13,7 +13,15 @@ const propertySchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true },
     type: {
       type: String,
-      enum: ['villa', 'appartement', 'terrain', 'bureau', 'commerce', 'Réalisation', 'autre'],
+      enum: [
+        'villa',
+        'appartement',
+        'terrain',
+        'bureau',
+        'commerce',
+        'Réalisation en cours',
+        'autre',
+      ],
       required: true,
     },
     listingType: {
