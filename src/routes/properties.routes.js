@@ -4,7 +4,6 @@ const Property = require('../models/Property');
 const { requireAuth } = require('../middleware/auth');
 const { deleteFromCloudinary } = require('../config/cloudinary');
 const { logAction } = require('../utils/audit');
-const { buildPropertySlug } = require('../utils/slugify');
 
 const router = express.Router();
 
