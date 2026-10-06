@@ -4,222 +4,78 @@ const Property = require('../models/Property');
 const { requireAuth } = require('../middleware/auth');
 const { deleteFromCloudinary } = require('../config/cloudinary');
 const { logAction } = require('../utils/audit');
+const { buildPropertySlug } = require('../utils/slugify');
 
 const router = express.Router();
 
-// ============================================================
-// PUBLIC
-// ============================================================
+// ===== PUBLIC =====
 
-/**
- * GET /api/properties
- *
- * Liste publique des biens actifs.
- *
- * Exemples :
- * /api/properties
- * /api/properties?listingType=vente
- * /api/properties?type=villa
- * /api/properties?featured=true
- * /api/properties?limit=6
- */
+// GET /api/properties?listingType=vente&type=villa&status=disponible&q=dakar&featured=true&limit=1
 router.get('/', async (req, res, next) => {
   try {
-    const {
-      listingType,
-      type,
-      status,
-      q,
-      minPrice,
-      maxPrice,
-      featured,
-      limit,
-    } = req.query;
+    const { listingType, type, status, q, minPrice, maxPrice, featured, limit } = req.query;
+    const filter = { active: true };
 
-    const filter = {
-      active: true,
-    };
-
-    if (listingType) {
-      filter.listingType = String(listingType).slice(0, 50);
+    if (listingType) filter.listingType = listingType;
+    if (type) filter.type = type;
+    if (status) filter.status = status;
+    if (featured === 'true') filter.featured = true;
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = Number(minPrice);
+      if (maxPrice) filter.price.$lte = Number(maxPrice);
     }
+    if (q) filter.$text = { $search: q };
 
-    if (type) {
-      filter.type = String(type).slice(0, 50);
-    }
-
-    if (status) {
-      filter.status = String(status).slice(0, 50);
-    }
-
-    if (featured === 'true') {
-      filter.featured = true;
-    }
-
-    // =========================
-    // Filtre prix
-    // =========================
-    if (minPrice !== undefined || maxPrice !== undefined) {
-      const priceFilter = {};
-
-      if (minPrice !== undefined) {
-        const value = Number(minPrice);
-
-        if (!Number.isFinite(value) || value < 0) {
-          return res.status(400).json({
-            success: false,
-            message: 'Prix minimum invalide.',
-          });
-        }
-
-        priceFilter.$gte = value;
-      }
-
-      if (maxPrice !== undefined) {
-        const value = Number(maxPrice);
-
-        if (!Number.isFinite(value) || value < 0) {
-          return res.status(400).json({
-            success: false,
-            message: 'Prix maximum invalide.',
-          });
-        }
-
-        priceFilter.$lte = value;
-      }
-
-      if (
-        priceFilter.$gte !== undefined &&
-        priceFilter.$lte !== undefined &&
-        priceFilter.$gte > priceFilter.$lte
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: 'Intervalle de prix invalide.',
-        });
-      }
-
-      filter.price = priceFilter;
-    }
-
-    // =========================
-    // Recherche
-    // =========================
-    if (q) {
-      const search = String(q).trim().slice(0, 100);
-
-      if (search) {
-        filter.$text = {
-          $search: search,
-        };
-      }
-    }
-
-    // =========================
-    // Requête
-    // =========================
-    let query = Property
-      .find(filter)
-      .sort({
-        featured: -1,
-        createdAt: -1,
-      });
-
-    const requestedLimit = Number(limit);
-
-    if (Number.isFinite(requestedLimit) && requestedLimit > 0) {
-      query = query.limit(
-        Math.min(Math.floor(requestedLimit), 100)
-      );
-    } else {
-      query = query.limit(100);
-    }
-
+    let query = Property.find(filter).sort({ featured: -1, createdAt: -1 });
+    if (limit) query = query.limit(Number(limit));
     const properties = await query;
 
-    return res.json({
-      success: true,
-      data: properties,
-    });
+    res.json({ success: true, data: properties });
   } catch (err) {
     next(err);
   }
 });
 
-
-// ============================================================
-// PUBLIC — DÉTAIL D'UN BIEN
-// ============================================================
-
-/**
- * GET /api/properties/:id
- *
- * Récupère un bien actif par son ID.
- *
- * Cette route est utilisée par la page :
- * /biens/:id
- */
-router.get('/:id', async (req, res, next) => {
+// GET /api/properties/:idOrSlug
+// Accepte à la fois le slug lisible (nouveaux liens partageables) et l'ID
+// MongoDB (anciens liens déjà partagés) — aucun lien existant ne se casse.
+router.get('/:idOrSlug', async (req, res, next) => {
   try {
-    const { id } = req.params;
-
-    // Vérification de l'ObjectId MongoDB
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Identifiant du bien invalide.',
-      });
+    const { idOrSlug } = req.params;
+    const conditions = [{ slug: idOrSlug }];
+    if (mongoose.Types.ObjectId.isValid(idOrSlug)) {
+      conditions.push({ _id: idOrSlug });
     }
 
-    const property = await Property.findOne({
-      _id: id,
-      active: true,
-    });
-
+    const property = await Property.findOne({ active: true, $or: conditions });
     if (!property) {
-      return res.status(404).json({
-        success: false,
-        message: 'Bien introuvable.',
-      });
+      return res.status(404).json({ success: false, message: 'Bien introuvable.' });
     }
-
-    return res.json({
-      success: true,
-      data: property,
-    });
+    res.json({ success: true, data: property });
   } catch (err) {
     next(err);
   }
 });
 
-
-// ============================================================
-// ADMIN — LISTE COMPLÈTE
-// ============================================================
+// ===== ADMIN (protégé) =====
 
 router.get('/admin/all', requireAuth, async (req, res, next) => {
   try {
-    const properties = await Property
-      .find()
-      .sort({ createdAt: -1 });
-
-    return res.json({
-      success: true,
-      data: properties,
-    });
+    const properties = await Property.find().sort({ createdAt: -1 });
+    res.json({ success: true, data: properties });
   } catch (err) {
     next(err);
   }
 });
 
-
-// ============================================================
-// ADMIN — CRÉER UN BIEN
-// ============================================================
-
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const property = await Property.create(req.body);
+    const payload = { ...req.body };
+    delete payload.slug; // le slug est toujours généré côté serveur, jamais fourni par le client
+    payload.slug = buildPropertySlug(payload.title || 'bien');
+
+    const property = await Property.create(payload);
 
     await logAction(req, {
       action: 'CREATE_PROPERTY',
@@ -228,45 +84,25 @@ router.post('/', requireAuth, async (req, res, next) => {
       details: `Création : ${property.title}`,
     });
 
-    return res.status(201).json({
-      success: true,
-      data: property,
-    });
+    res.status(201).json({ success: true, data: property });
   } catch (err) {
     next(err);
   }
 });
 
-
-// ============================================================
-// ADMIN — MODIFIER UN BIEN
-// ============================================================
-
 router.put('/:id', requireAuth, async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const payload = { ...req.body };
+    // Le slug reste STABLE après création, même si le titre change : un lien
+    // déjà partagé à un client ne doit jamais cesser de fonctionner.
+    delete payload.slug;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Identifiant du bien invalide.',
-      });
-    }
-
-    const property = await Property.findByIdAndUpdate(
-      id,
-      req.body,
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
-
+    const property = await Property.findByIdAndUpdate(req.params.id, payload, {
+      new: true,
+      runValidators: true,
+    });
     if (!property) {
-      return res.status(404).json({
-        success: false,
-        message: 'Bien introuvable.',
-      });
+      return res.status(404).json({ success: false, message: 'Bien introuvable.' });
     }
 
     await logAction(req, {
@@ -276,48 +112,21 @@ router.put('/:id', requireAuth, async (req, res, next) => {
       details: `Modification : ${property.title}`,
     });
 
-    return res.json({
-      success: true,
-      data: property,
-    });
+    res.json({ success: true, data: property });
   } catch (err) {
     next(err);
   }
 });
 
-
-// ============================================================
-// ADMIN — SUPPRIMER UN BIEN
-// ============================================================
-
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
-    const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Identifiant du bien invalide.',
-      });
-    }
-
-    const property = await Property.findByIdAndDelete(id);
-
+    const property = await Property.findByIdAndDelete(req.params.id);
     if (!property) {
-      return res.status(404).json({
-        success: false,
-        message: 'Bien introuvable.',
-      });
+      return res.status(404).json({ success: false, message: 'Bien introuvable.' });
     }
 
-    // Suppression des images Cloudinary
-    await Promise.all(
-      (property.images || [])
-        .filter((img) => img?.publicId)
-        .map((img) => deleteFromCloudinary(img.publicId))
-    );
+    await Promise.all((property.images || []).map((img) => deleteFromCloudinary(img.publicId)));
 
-    // Journal de surveillance
     await logAction(req, {
       action: 'DELETE_PROPERTY',
       targetType: 'Property',
@@ -325,14 +134,10 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
       details: `Suppression : ${property.title}`,
     });
 
-    return res.json({
-      success: true,
-      message: 'Bien supprimé.',
-    });
+    res.json({ success: true, message: 'Bien supprimé.' });
   } catch (err) {
     next(err);
   }
 });
-
 
 module.exports = router;
